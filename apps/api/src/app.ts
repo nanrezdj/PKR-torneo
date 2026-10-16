@@ -11,6 +11,7 @@ import {
   paymentSchema,
   prizePayoutSchema,
   rebuyRequestSchema,
+  recordRebuySchema,
   rejectRebuySchema,
   themeSchema,
   verifyMagicLinkSchema,
@@ -36,7 +37,13 @@ import {
 import { actOnClock, readClock } from "./services/clock";
 import { confirmPayment, createPayment, voidPayment } from "./services/payments";
 import { getSummary, getTournament } from "./services/read";
-import { approveRebuy, listRebuyRequests, rejectRebuy, requestRebuy } from "./services/rebuy";
+import {
+  approveRebuy,
+  listRebuyRequests,
+  recordRebuy,
+  rejectRebuy,
+  requestRebuy,
+} from "./services/rebuy";
 import { closeTournament, finalizeTournament, payPrize } from "./services/results";
 import { assertCanRead } from "./services/support";
 import { activeTheme, restoreTheme, saveTheme } from "./services/themes";
@@ -275,6 +282,16 @@ export function createApp(): Hono<AppEnv> {
       await parseBody(raw, z.object({}));
       const user = requireUser(c.get("user"));
       const body = await startTournament(d1Adapter(c.env.DB), c.req.param("id"), user, idem);
+      await broadcast(c.env, c.req.param("id"), { type: "tournament-updated" });
+      return { status: 200, body };
+    }),
+  );
+
+  app.post("/tournaments/:id/rebuys", (c) =>
+    withIdempotency(c, d1Adapter(c.env.DB), async (idem, raw) => {
+      const user = requireUser(c.get("user"));
+      const input = await parseBody(raw, recordRebuySchema);
+      const body = await recordRebuy(d1Adapter(c.env.DB), c.req.param("id"), user, input, idem);
       await broadcast(c.env, c.req.param("id"), { type: "tournament-updated" });
       return { status: 200, body };
     }),

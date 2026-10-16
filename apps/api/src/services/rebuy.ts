@@ -182,6 +182,140 @@ export async function approveRebuy(
   return body;
 }
 
+export async function recordRebuy(
+  db: AppDB,
+  tournamentId: string,
+  actor: { id: string; role: GlobalRole },
+  input: { userId: string; method: "cash" | "transfer"; note?: string },
+  idem: Idem | null,
+): Promise<{ entryId: string; status: "approved" }> {
+  await assertCanHandleMoney(db, tournamentId, actor);
+  const pending = await db
+    .prepare(
+      "SELECT id FROM rebuy_requests WHERE tournament_id = ? AND user_id = ? AND status = 'pending'",
+    )
+    .bind(tournamentId, input.userId)
+    .first<{ id: string }>();
+  if (pending) return approveRebuy(db, tournamentId, pending.id, actor, input.method, idem);
+
+  const requestId = randomId();
+  const entryId = randomId();
+  const paymentId = randomId();
+  const decidedAt = nowIso();
+  const body = { entryId, status: "approved" as const };
+  const exists = "EXISTS (SELECT 1 FROM entries WHERE id = ?)";
+  const results = await db.batch(
+    withOptional(
+      [
+        db
+          .prepare(
+            `INSERT INTO rebuy_requests
+               (id, tournament_id, user_id, status, method, note, requested_at, decided_at, decided_by)
+             SELECT ?, ?, ?, 'approved', ?, ?, ?, ?, ?
+             WHERE EXISTS (
+               SELECT 1 FROM tournament_members m
+               JOIN tournaments t ON t.id = m.tournament_id
+               WHERE m.tournament_id = ? AND m.user_id = ? AND m.player_status = 'active' AND t.status = 'live'
+             )
+             AND (
+               SELECT COUNT(*) FROM entries e
+               WHERE e.tournament_id = ? AND e.user_id = ? AND e.kind = 'rebuy' AND e.status = 'valid'
+             ) < (
+               SELECT max_rebuys + CASE WHEN host_user_id = ? THEN host_extra_rebuys ELSE 0 END
+               FROM tournaments WHERE id = ?
+             )`,
+          )
+          .bind(
+            requestId,
+            tournamentId,
+            input.userId,
+            input.method,
+            input.note ?? null,
+            decidedAt,
+            decidedAt,
+            actor.id,
+            tournamentId,
+            input.userId,
+            tournamentId,
+            input.userId,
+            input.userId,
+            tournamentId,
+          ),
+        db
+          .prepare(
+            `INSERT INTO entries (id, tournament_id, user_id, kind, rebuy_request_id, amount_minor, status, created_by, created_at, used_at)
+             SELECT ?, r.tournament_id, r.user_id, 'rebuy', r.id, t.rebuy_price_minor, 'valid', ?, ?, ?
+             FROM rebuy_requests r
+             JOIN tournaments t ON t.id = r.tournament_id
+             WHERE r.id = ? AND r.status = 'approved' AND r.decided_at = ?
+               AND NOT EXISTS (SELECT 1 FROM entries e WHERE e.rebuy_request_id = r.id)`,
+          )
+          .bind(entryId, actor.id, decidedAt, decidedAt, requestId, decidedAt),
+        db
+          .prepare(
+            `INSERT INTO ledger_entries (id, tournament_id, user_id, entry_id, payment_id, kind, amount_minor, direction, created_at)
+             SELECT ?, e.tournament_id, e.user_id, e.id, NULL, 'obligation_created', e.amount_minor, 'debit', ?
+             FROM entries e WHERE e.id = ?`,
+          )
+          .bind(randomId(), decidedAt, entryId),
+        db
+          .prepare(
+            `INSERT INTO payments (id, tournament_id, user_id, method, amount_minor, status, reference, confirmed_by, created_at, confirmed_at)
+             SELECT ?, e.tournament_id, e.user_id, ?, e.amount_minor, 'confirmed', NULL, ?, ?, ?
+             FROM entries e WHERE e.id = ?`,
+          )
+          .bind(paymentId, input.method, actor.id, decidedAt, decidedAt, entryId),
+        db
+          .prepare(
+            `INSERT INTO payment_allocations (payment_id, entry_id, amount_minor)
+             SELECT ?, e.id, e.amount_minor FROM entries e WHERE e.id = ?`,
+          )
+          .bind(paymentId, entryId),
+        db
+          .prepare(
+            `INSERT INTO ledger_entries (id, tournament_id, user_id, entry_id, payment_id, kind, amount_minor, direction, created_at)
+             SELECT ?, p.tournament_id, p.user_id, ?, p.id, 'payment_confirmed', p.amount_minor, 'credit', ?
+             FROM payments p WHERE p.id = ? AND p.status = 'confirmed'`,
+          )
+          .bind(randomId(), entryId, decidedAt, paymentId),
+        db
+          .prepare(
+            `INSERT INTO outbox_events (id, tournament_id, event_type, payload_json, created_at, published_at)
+             SELECT ?, tournament_id, 'rebuy.approved', ?, ?, ?
+             FROM entries WHERE id = ?`,
+          )
+          .bind(
+            randomId(),
+            JSON.stringify({ entryId, requestId, recordedBy: actor.id }),
+            decidedAt,
+            decidedAt,
+            entryId,
+          ),
+        auditStmt(
+          db,
+          tournamentId,
+          actor.id,
+          "rebuy.record",
+          "rebuy_request",
+          requestId,
+          { entryId, method: input.method, userId: input.userId },
+          exists,
+          [entryId],
+        ),
+      ],
+      rememberStmt(db, idem, 200, body, exists, [entryId]),
+    ),
+  );
+  if (results[1]?.changes !== 1) {
+    throw new ApiError(
+      422,
+      "BUSINESS_RULE_VIOLATION",
+      "No se puede registrar otra recompra para ese jugador",
+    );
+  }
+  return body;
+}
+
 export async function rejectRebuy(
   db: AppDB,
   tournamentId: string,

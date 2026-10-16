@@ -5,7 +5,7 @@ import { ApiError } from "../src/http";
 import { actOnClock, syncAndReadClock } from "../src/services/clock";
 import { confirmPayment, createPayment, voidPayment } from "../src/services/payments";
 import { getSummary, getTournament } from "../src/services/read";
-import { approveRebuy, requestRebuy } from "../src/services/rebuy";
+import { approveRebuy, recordRebuy, requestRebuy } from "../src/services/rebuy";
 import { finalizeTournament } from "../src/services/results";
 import {
   assignCashier,
@@ -254,7 +254,12 @@ describe("motor financiero", () => {
         "SELECT level_no, small_blind, big_blind, duration_seconds FROM blind_levels WHERE tournament_id = ? AND level_no IN (9, 12, 15, 27) ORDER BY level_no",
       )
       .bind(created.id)
-      .all<{ level_no: number; small_blind: number; big_blind: number; duration_seconds: number }>();
+      .all<{
+        level_no: number;
+        small_blind: number;
+        big_blind: number;
+        duration_seconds: number;
+      }>();
     expect(curve).toEqual([
       { level_no: 9, small_blind: 1000, big_blind: 2000, duration_seconds: 600 },
       { level_no: 12, small_blind: 2000, big_blind: 4000, duration_seconds: 720 },
@@ -278,6 +283,63 @@ describe("motor financiero", () => {
       .first<{ total: number }>();
     expect(mode?.ladder_mode).toBe("custom");
     expect(finiteLevels?.total).toBe(2);
+  });
+
+  it("el cajero registra una recompra sin que el jugador la pida", async () => {
+    const db = openTestDb();
+    await seed(db);
+    const actor = { id: admin, role: "super_admin" as const };
+    const created = await createTournament(db, admin, input, null);
+    await startTournament(db, created.id, actor, null);
+    await assignCashier(db, created.id, carlos, actor);
+    await expect(
+      recordRebuy(
+        db,
+        created.id,
+        { id: host, role: "player" },
+        { userId: ana, method: "cash" },
+        null,
+      ),
+    ).rejects.toThrow(/administrador o el cajero/);
+
+    const direct = await recordRebuy(
+      db,
+      created.id,
+      { id: carlos, role: "player" },
+      { userId: ana, method: "transfer" },
+      null,
+    );
+    expect(direct.status).toBe("approved");
+    const row = await db
+      .prepare(
+        `SELECT r.status, r.method, p.status AS payment_status
+         FROM entries e
+         JOIN rebuy_requests r ON r.id = e.rebuy_request_id
+         JOIN payment_allocations a ON a.entry_id = e.id
+         JOIN payments p ON p.id = a.payment_id
+         WHERE e.id = ?`,
+      )
+      .bind(direct.entryId)
+      .first<{ status: string; method: string; payment_status: string }>();
+    expect(row).toEqual({ status: "approved", method: "transfer", payment_status: "confirmed" });
+    const summary = await getSummary(db, created.id, actor);
+    expect(summary.collectedMinor).toBe(35000);
+    expect(summary.committedMinor).toBe(35000);
+
+    const pending = await requestRebuy(db, created.id, host, { method: "cash" }, null);
+    const settled = await recordRebuy(
+      db,
+      created.id,
+      { id: admin, role: "super_admin" },
+      { userId: host, method: "cash" },
+      null,
+    );
+    expect(settled.entryId).toBeTruthy();
+    const stillPending = await db
+      .prepare("SELECT status FROM rebuy_requests WHERE id = ?")
+      .bind(pending.id)
+      .first<{ status: string }>();
+    expect(stillPending?.status).toBe("approved");
   });
 
   it("solo el cajero o un administrador deciden recompras y la forma de pago", async () => {

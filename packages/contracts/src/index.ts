@@ -80,6 +80,12 @@ export const rebuyRequestSchema = z.object({
   note: z.string().trim().max(200).optional(),
 });
 
+export const recordRebuySchema = z.object({
+  userId: z.string().uuid(),
+  method: z.enum(["cash", "transfer"]),
+  note: z.string().trim().max(200).optional(),
+});
+
 export const rejectRebuySchema = z.object({
   reason: z.string().trim().max(200).optional(),
 });

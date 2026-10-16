@@ -152,6 +152,11 @@ export function DashboardPage() {
       api(`/tournaments/${id}/initial-payment`, { method: "POST", body: JSON.stringify(body) }),
     onSuccess: async () => client.invalidateQueries({ queryKey: ["tournament", id] }),
   });
+  const recordRebuy = useMutation({
+    mutationFn: (body: { userId: string; method: "cash" | "transfer" }) =>
+      api(`/tournaments/${id}/rebuys`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: async () => client.invalidateQueries({ queryKey: ["tournament", id] }),
+  });
   const bust = useMutation({
     mutationFn: (userId: string) =>
       api(`/tournaments/${id}/bust`, { method: "POST", body: JSON.stringify({ userId }) }),
@@ -188,6 +193,7 @@ export function DashboardPage() {
           action.error ??
           start.error ??
           payInitial.error ??
+          recordRebuy.error ??
           bust.error ??
           enroll.error
         }
@@ -212,8 +218,8 @@ export function DashboardPage() {
           <p className="text-xs text-white/60">Cajero</p>
           <p className="text-lg">{tournament.cashierName ?? "Sin asignar"}</p>
           <p className="mt-1 text-sm text-white/60">
-            El cajero o un administrador aprueban las recompras y confirman si el pago es efectivo o
-            transferencia.
+            El cajero o un administrador pueden registrar una recompra sin que el jugador la pida.
+            Eligen efectivo o transferencia y queda cobrada.
           </p>
           {canAdmin ? (
             <form
@@ -434,6 +440,39 @@ export function DashboardPage() {
                                     </button>
                                   </div>
                                 ) : null}
+                                {canHandleMoney &&
+                                tournament.status === "live" &&
+                                player.playerStatus === "active" &&
+                                player.rebuyCount < player.rebuyCap ? (
+                                  <div className="mt-1 flex gap-2">
+                                    <button
+                                      className="text-xs text-[var(--gold)]"
+                                      type="button"
+                                      disabled={recordRebuy.isPending}
+                                      onClick={() =>
+                                        recordRebuy.mutate({
+                                          userId: player.userId,
+                                          method: "cash",
+                                        })
+                                      }
+                                    >
+                                      Recompra efectivo
+                                    </button>
+                                    <button
+                                      className="text-xs text-[var(--gold)]"
+                                      type="button"
+                                      disabled={recordRebuy.isPending}
+                                      onClick={() =>
+                                        recordRebuy.mutate({
+                                          userId: player.userId,
+                                          method: "transfer",
+                                        })
+                                      }
+                                    >
+                                      Recompra transferencia
+                                    </button>
+                                  </div>
+                                ) : null}
                                 {canHandleMoney && lastBuy ? (
                                   <button
                                     className="mt-1 text-xs text-red-300"
@@ -597,6 +636,70 @@ export function RebuyPage() {
   );
 }
 
+function DirectRebuy({ tournamentId }: { tournamentId: string }) {
+  const detail = useDetail(tournamentId);
+  const client = useQueryClient();
+  const eligible = (detail.data?.players ?? []).filter(
+    (player) => player.playerStatus === "active" && player.rebuyCount < player.rebuyCap,
+  );
+  const [userId, setUserId] = useState("");
+  const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  const send = useMutation({
+    mutationFn: () =>
+      api(`/tournaments/${tournamentId}/rebuys`, {
+        method: "POST",
+        body: JSON.stringify({ userId, method }),
+      }),
+    onSuccess: async () => {
+      setUserId("");
+      await client.invalidateQueries({ queryKey: ["tournament", tournamentId] });
+    },
+  });
+  if (detail.data?.status !== "live") return null;
+  return (
+    <form
+      className="card mb-4 space-y-3 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (userId) send.mutate();
+      }}
+    >
+      <Field label="Registrar recompra">
+        <select
+          className={controlClass}
+          value={userId}
+          onChange={(event) => setUserId(event.target.value)}
+        >
+          <option value="">Elegir jugador</option>
+          {eligible.map((player) => (
+            <option key={player.userId} value={player.userId}>
+              {player.displayName} · {player.rebuyCount}/{player.rebuyCap}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <fieldset className="flex gap-4 text-sm">
+        <label>
+          <input type="radio" checked={method === "cash"} onChange={() => setMethod("cash")} />{" "}
+          Efectivo
+        </label>
+        <label>
+          <input
+            type="radio"
+            checked={method === "transfer"}
+            onChange={() => setMethod("transfer")}
+          />{" "}
+          Transferencia
+        </label>
+      </fieldset>
+      <Primary type="submit" disabled={!userId || send.isPending || eligible.length === 0}>
+        Registrar y cobrar
+      </Primary>
+      <ErrorText error={send.error} />
+    </form>
+  );
+}
+
 export function ApprovalsPage() {
   const { id = "" } = useParams();
   const detail = useDetail(id);
@@ -625,8 +728,10 @@ export function ApprovalsPage() {
   return (
     <Shell title="Solicitudes de recompra" back={`/torneos/${id}`}>
       <p className="mb-3 text-sm text-white/70">
-        Solo el cajero o un administrador pueden aprobar, y eligen efectivo o transferencia.
+        El cajero o un administrador registran la recompra directo. Si el jugador ya la pidió,
+        aprobarla hace lo mismo.
       </p>
+      {canHandleMoney ? <DirectRebuy tournamentId={id} /> : null}
       <ul className="space-y-3">
         {pending.map((request) => (
           <li key={request.id} className="card p-3">

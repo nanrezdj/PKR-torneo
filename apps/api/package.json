@@ -1,0 +1,27 @@
+{
+  "name": "@pkr/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ./scripts/ensure-dev-vars.mjs && wrangler dev --port 8787 --ip 127.0.0.1",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply pkr --local",
+    "db:seed:local": "wrangler d1 execute pkr --local --file=./seed/seed.sql",
+    "db:migrate:remote": "wrangler d1 migrations apply pkr --remote"
+  },
+  "dependencies": {
+    "@pkr/contracts": "workspace:*",
+    "@pkr/domain": "workspace:*",
+    "hono": "4.9.8",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20251008.0",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4",
+    "wrangler": "4.40.3"
+  }
+}

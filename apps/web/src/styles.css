@@ -1,0 +1,72 @@
+@import "tailwindcss";
+@source "../../../packages/ui/src";
+
+@theme {
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --felt: #075c46;
+  --ink: #090d12;
+  --gold: #d4af37;
+  --blood: #d62839;
+  --radius: 16px;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(
+      900px 420px at 50% -10%,
+      color-mix(in srgb, var(--gold) 22%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      700px 380px at 100% 100%,
+      color-mix(in srgb, var(--felt) 55%, transparent),
+      transparent 55%
+    ), var(--ink);
+  color: #f6f1e4;
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.card {
+  background: color-mix(in srgb, white 4%, #10161d);
+  border: 1px solid color-mix(in srgb, white 10%, transparent);
+  border-radius: var(--radius);
+}
+
+.gold-btn {
+  background: linear-gradient(#f0d78c, var(--gold));
+  color: #1a1406;
+  font-weight: 700;
+}
+
+.blood-btn {
+  background: var(--blood);
+  color: white;
+  font-weight: 700;
+}

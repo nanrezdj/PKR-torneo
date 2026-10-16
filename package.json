@@ -1,0 +1,24 @@
+{
+  "name": "poker-tournament-manager",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.18.1",
+  "scripts": {
+    "dev": "node scripts/workspace.mjs --parallel --filter @pkr/api --filter @pkr/web dev",
+    "build": "node scripts/workspace.mjs --filter @pkr/web build",
+    "test": "node scripts/workspace.mjs -r --if-present test",
+    "typecheck": "node scripts/workspace.mjs -r --if-present typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "db:migrate:local": "node scripts/workspace.mjs --filter @pkr/api db:migrate:local",
+    "db:seed:local": "node scripts/workspace.mjs --filter @pkr/api db:seed:local",
+    "db:migrate:remote": "node scripts/workspace.mjs --filter @pkr/api db:migrate:remote",
+    "deploy": "node scripts/workspace.mjs build && node scripts/workspace.mjs --filter @pkr/api deploy"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@biomejs/biome", "@tailwindcss/oxide", "esbuild", "sharp", "workerd"]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@pkr/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview --host 127.0.0.1 --port 5173"
+  },
+  "dependencies": {
+    "@pkr/contracts": "workspace:*",
+    "@pkr/domain": "workspace:*",
+    "@pkr/ui": "workspace:*",
+    "@tanstack/react-query": "5.90.2",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-router": "7.9.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.14",
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.9",
+    "@vitejs/plugin-react": "5.0.4",
+    "tailwindcss": "4.1.14",
+    "typescript": "5.8.3",
+    "vite": "6.3.6"
+  }
+}
